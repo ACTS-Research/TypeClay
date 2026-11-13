@@ -169,17 +169,6 @@ run({
     ctx.fillStyle = params.ink;
     for (const g of glyphs) ctx.fill(toPath2D(g.commands));
 
-    // per-letter influence dots (only in per-letter mode; part of the preview, not the art)
-    if (params.perLetter && !app.frozen) {
-      glyphs.forEach((g, i) => {
-        ctx.globalAlpha = 0.15 + 0.85 * (influence[i] ?? 0);
-        ctx.beginPath();
-        ctx.arc(g.x + g.advance / 2, baseline + size * 0.18, 3 + 5 * (influence[i] ?? 0), 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.globalAlpha = 1;
-    }
-
     // readout (DOM, so it never lands in the PNG)
     const c = coords[params.perLetter ? focusLetter : 0] ?? {};
     const head = params.perLetter ? `letter "${[...app.word][focusLetter] ?? ""}"  (per-letter)` : "whole word";
@@ -191,6 +180,19 @@ run({
       return `${tag.padEnd(5)}${v.toFixed(0).padStart(5)} ${bar}  ${m.label}`;
     });
     readout.textContent = [head, ...rows].join("\n");
+  },
+
+  drawUI(ctx, app) {
+    // per-letter influence dots under each letter (preview only)
+    if (!params.perLetter || app.frozen) return;
+    const baseline = app.H * 0.5 + size * 0.36;
+    ctx.fillStyle = params.ink;
+    glyphs.forEach((g, i) => {
+      ctx.globalAlpha = 0.15 + 0.85 * (influence[i] ?? 0);
+      ctx.beginPath();
+      ctx.arc(g.x + g.advance / 2, baseline + size * 0.18, 3 + 5 * (influence[i] ?? 0), 0, Math.PI * 2);
+      ctx.fill();
+    });
   },
 
   toSVG(app) {

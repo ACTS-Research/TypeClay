@@ -33,6 +33,8 @@ export interface Prototype {
   /** Called every frame. Respect app.frozen yourself (some prototypes keep animating). */
   update(dt: number, s: Signals, app: App): void;
   draw(ctx: CanvasRenderingContext2D, app: App): void;
+  /** Optional preview-only layer (cursors, brush rings). Never part of captures. */
+  drawUI?(ctx: CanvasRenderingContext2D, app: App): void;
   onWord?(word: string, app: App): void;
   onResize?(app: App): void;
   onKey?(e: KeyboardEvent, app: App): boolean;
@@ -80,6 +82,7 @@ export async function run(proto: Prototype) {
   const toastEl = document.getElementById("toast")!;
   const wordInput = document.getElementById("word") as HTMLInputElement;
   help.textContent = [...SHARED_HELP, "— this prototype —", ...proto.help].join("\n");
+  try { help.hidden = localStorage.getItem("type-as-clay:help") === "hidden"; } catch { /* storage blocked */ }
 
   const tracker = new HandTracker();
   document.getElementById("preview")!.append(tracker.video);
@@ -153,7 +156,10 @@ export async function run(proto: Prototype) {
     if (e.code === "Space") { e.preventDefault(); app.frozen = !app.frozen; app.toast(app.frozen ? "Frozen. Space to release" : "Released"); }
     else if (k === "c") capture();
     else if (k === "d") { settings.input.debug = !settings.input.debug; saveSettings(); }
-    else if (k === "h") help.hidden = !help.hidden;
+    else if (k === "h") {
+      help.hidden = !help.hidden;
+      try { localStorage.setItem("type-as-clay:help", help.hidden ? "hidden" : "shown"); } catch { /* ignore */ }
+    }
   });
 
   function capture() {
@@ -203,6 +209,7 @@ export async function run(proto: Prototype) {
     ctx.restore();
 
     octx.clearRect(0, 0, app.W, app.H);
+    if (proto.drawUI) { octx.save(); proto.drawUI(octx, app); octx.restore(); }
     if (settings.input.debug) {
       drawDebug(octx, app.signals, {
         renderFps: fps, trackFps: tracker.fps, W: app.W,
