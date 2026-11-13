@@ -174,6 +174,7 @@ export async function run(proto: Prototype) {
   }
 
   proto.init(app);
+  gui.close(); // collapsed by default so it doesn't cover the art; click "Tuning"
   // ?nocam skips the webcam (mouse only); handy for quick tuning and tests
   if (settings.input.camera && !new URLSearchParams(location.search).has("nocam")) tracker.start();
 
@@ -204,7 +205,7 @@ export async function run(proto: Prototype) {
     octx.clearRect(0, 0, app.W, app.H);
     if (settings.input.debug) {
       drawDebug(octx, app.signals, {
-        renderFps: fps, trackFps: tracker.fps,
+        renderFps: fps, trackFps: tracker.fps, W: app.W,
         status: tracker.status === "running" ? `camera ${tracker.delegate}` : tracker.status === "error" ? "camera unavailable" : `camera ${tracker.status}`,
       });
     }

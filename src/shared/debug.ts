@@ -58,7 +58,7 @@ function drawHand(ctx: CanvasRenderingContext2D, h: HandSignals) {
 
 export function drawDebug(
   ctx: CanvasRenderingContext2D, s: Signals,
-  info: { renderFps: number; trackFps: number; status: string },
+  info: { renderFps: number; trackFps: number; status: string; W: number },
 ) {
   for (const h of [s.left, s.right]) if (h.present) drawHand(ctx, h);
   if (s.both) {
@@ -77,7 +77,8 @@ export function drawDebug(
   ];
   ctx.font = "12px ui-monospace, Menlo, monospace";
   ctx.fillStyle = "rgba(0,0,0,.6)";
-  ctx.fillRect(8, 8, 330, lines.length * 16 + 8);
+  const x = Math.round(info.W / 2 - 165); // top centre, clear of the side panels
+  ctx.fillRect(x, 8, 330, lines.length * 16 + 8);
   ctx.fillStyle = "#fff";
-  lines.forEach((t, i) => ctx.fillText(t, 14, 24 + i * 16));
+  lines.forEach((t, i) => ctx.fillText(t, x + 6, 24 + i * 16));
 }
