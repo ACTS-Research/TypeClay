@@ -105,7 +105,7 @@ run({
     readout = document.createElement("pre");
     readout.className = "readout";
     readout.style.cssText =
-      "position:absolute;left:12px;top:12px;margin:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,monospace;" +
+      "position:absolute;right:12px;bottom:140px;margin:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,monospace;" +
       "background:rgba(20,19,17,.82);color:#efe9df;border-radius:8px;pointer-events:none;white-space:pre";
     app.canvas.parentElement!.append(readout);
 

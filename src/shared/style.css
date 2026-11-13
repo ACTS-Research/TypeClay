@@ -25,7 +25,7 @@ body { display: grid; grid-template-rows: auto minmax(0, 1fr); font: 14px/1.4 sy
 #preview { position: absolute; right: 12px; bottom: 12px; width: 200px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; opacity: .85; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
 #preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 #preview[hidden] { display: none; }
-#help { position: absolute; left: 12px; bottom: 12px; margin: 0; padding: 10px 12px; font: 11px/1.5 ui-monospace, Menlo, monospace; color: #3b3732; background: rgba(255,255,255,.6); border-radius: 8px; pointer-events: none; }
+#help { position: absolute; left: 12px; top: 12px; margin: 0; padding: 10px 12px; font: 11px/1.5 ui-monospace, Menlo, monospace; color: #3b3732; background: rgba(255,255,255,.6); border-radius: 8px; pointer-events: none; }
 #help[hidden], #toast[hidden] { display: none; }
 #toast { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); padding: 6px 14px; border-radius: 99px; background: #141311; color: #fff; font-weight: 600; pointer-events: none; }
 .lil-gui.lil-root { position: absolute; top: 8px; right: 8px; z-index: 5; max-height: calc(100% - 16px); overflow: auto; }
