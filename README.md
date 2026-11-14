@@ -11,8 +11,8 @@ This is an exploration. The code favours quick, readable and hackable over polis
 You need Node.js 20.19 or newer (`.nvmrc` pins 22).
 
 ```bash
-git clone https://github.com/ACTS-Research/type-toy.git
-cd type-toy
+git clone https://github.com/ACTS-Research/TypeClay.git
+cd TypeClay
 npm install
 npm run dev
 ```

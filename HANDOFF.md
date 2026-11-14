@@ -17,7 +17,7 @@ The repo is **public**, so anyone can clone and run it. A GitHub collaborator in
 
 From a Claude Code session on the machine that has the webcam (for example the Claude desktop app), ask:
 
-> Clone https://github.com/ACTS-Research/type-toy.git into my Documents folder, run `npm install`, then `npm run dev`, and open http://localhost:5173 in my browser. Install Node.js LTS first if it's missing.
+> Clone https://github.com/ACTS-Research/TypeClay.git into my Documents folder, run `npm install`, then `npm run dev`, and open http://localhost:5173 in my browser. Install Node.js LTS first if it's missing.
 
 Allow camera access when the browser asks.
 
