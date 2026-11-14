@@ -12,8 +12,9 @@
  *   shape matching          a weak pull toward the best-fit rotated rest shape; stops slow collapse
  *
  * MAPPING (retune in `params`)
- *   fingertips      small round colliders; poke and dent
- *   knuckles+palm   bigger colliders; an open flat hand presses a letter flat
+ *   whole hand      one solid convex shape around the 21 landmarks (a "mitten"). Moving, it
+ *                   pushes material out of its leading edge, so a palm coming down presses
+ *                   a letter flat; still, it pushes to the nearest edge
  *   hand velocity   transferred on contact, so a fast swipe knocks letters over
  *   two palms       squeezing a letter between them compresses it (area pushes back)
  *   pinch           grabs the nearest few outline points: pick a letter up, throw it
@@ -28,7 +29,7 @@
 import { run, type App } from "../shared/app";
 import { svgDocument } from "../shared/capture";
 import { defaultCoords, flatten, layoutWord, pointInPolys, polygonsToSvgD, resampleClosed } from "../shared/font";
-import { FINGERTIPS, type HandSignals, type Pt, type Side } from "../shared/types";
+import type { HandSignals, Pt, Side } from "../shared/types";
 
 const params = {
   plasticity: 0.5,
@@ -54,6 +55,7 @@ interface Body {
   count: number;
   contours: { start: number; count: number; area0: number }[];
   rest: Float32Array; // rest shape, relative to rest centroid (x,y interleaved)
+  original: Float32Array; // the rest shape as built (plasticity never touches it)
   color: string;
 }
 
@@ -65,10 +67,15 @@ let bodies: Body[] = [];
 let sa = new Int32Array(0), sb = new Int32Array(0), srest = new Float32Array(0);
 let floorY = 0;
 
-// colliders: circles with velocity, rebuilt from the hands each frame
-interface Circle { x: number; y: number; r: number; vx: number; vy: number }
-let colliders: Circle[] = [];
-let prevColliders: Circle[] = [];
+// colliders: one solid convex shape per hand (its "mitten"), rebuilt each frame
+interface HandShape {
+  pts: Pt[]; // convex hull, slightly inflated
+  cx: number; cy: number; // centroid
+  vx: number; vy: number; // velocity of the centroid, px/s
+  side: Side;
+  x0: number; y0: number; x1: number; y1: number; // bounding box
+}
+let colliders: HandShape[] = [];
 const grabbed: Partial<Record<Side, { idx: number[]; off: Pt[] }>> = {};
 let accumulator = 0;
 
@@ -92,7 +99,7 @@ function build(app: App) {
     polys.forEach((c) => c.forEach((p) => (p.y += floorY - 1 - maxY)));
 
     const start = pts.length;
-    const body: Body = { start, count: 0, contours: [], rest: new Float32Array(0), color: `hsl(${16 + gi * 9} 48% ${40 + (gi % 2) * 6}%)` };
+    const body: Body = { start, count: 0, contours: [], rest: new Float32Array(0), original: new Float32Array(0), color: `hsl(${16 + gi * 9} 48% ${40 + (gi % 2) * 6}%)` };
     for (const c of polys) {
       const cs = pts.length;
       c.forEach((p) => { pts.push(p); own.push(bodies.length); });
@@ -144,6 +151,7 @@ function build(app: App) {
     const [cx, cy] = centroid(b);
     b.rest = new Float32Array(b.count * 2);
     for (let k = 0; k < b.count; k++) { b.rest[2 * k] = px[b.start + k] - cx; b.rest[2 * k + 1] = py[b.start + k] - cy; }
+    b.original = b.rest.slice();
   }
   delete grabbed.left;
   delete grabbed.right;
@@ -166,32 +174,49 @@ function centroid(b: Body): [number, number] {
 
 // ---------- hands -> colliders ----------
 
-function handColliders(h: HandSignals, out: Circle[]) {
-  const s = h.size * params.handScale;
-  const P = h.pts;
-  for (const i of FINGERTIPS) out.push({ x: P[i].x, y: P[i].y, r: s * 0.13, vx: 0, vy: 0 });
-  for (const i of [6, 10, 14, 18]) out.push({ x: P[i].x, y: P[i].y, r: s * 0.13, vx: 0, vy: 0 });
-  for (const i of [5, 9, 13, 17]) out.push({ x: P[i].x, y: P[i].y, r: s * 0.2, vx: 0, vy: 0 });
-  // palm: bigger when the hand is open, so a flat hand is a flat press
-  out.push({ x: h.palm.x, y: h.palm.y, r: s * (0.35 + 0.25 * h.openness), vx: 0, vy: 0 });
-  out.push({ x: P[0].x, y: P[0].y, r: s * 0.25, vx: 0, vy: 0 });
+// Each hand is ONE solid convex shape: the hull around its 21 landmarks, like a mitten.
+// Earlier tries: a few big circles (a palm is wider than a stroke, so it slipped inside
+// hollow letters and tangled their contours) and a cloud of small circles (outline points
+// slipped through the gaps). A single solid shape has neither problem.
+function hull(points: Pt[]): Pt[] {
+  const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Pt[] = [], upper: Pt[] = [];
+  for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+  for (const q of p.reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
 }
 
-function updateColliders(app: App, dt: number) {
-  const next: Circle[] = [];
+function handShape(h: HandSignals): HandShape {
+  const raw = hull(h.pts);
+  const cx = raw.reduce((a, q) => a + q.x, 0) / raw.length, cy = raw.reduce((a, q) => a + q.y, 0) / raw.length;
+  const m = h.size * 0.1 * params.handScale; // fingers have thickness
+  const pts = raw.map((q) => {
+    const dx = q.x - cx, dy = q.y - cy, d = Math.hypot(dx, dy) || 1;
+    return { x: q.x + (dx / d) * m, y: q.y + (dy / d) * m };
+  });
+  const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+  return { pts, cx, cy, vx: h.vel.x, vy: h.vel.y, side: h.side, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+let prevCentroid: Partial<Record<Side, Pt>> = {};
+
+function updateColliders(app: App) {
+  const next: HandShape[] = [];
   const mouse = app.signals.source === "mouse";
+  const centroids: Partial<Record<Side, Pt>> = {};
   for (const side of ["left", "right"] as Side[]) {
     const h = app.signals[side];
     if (!h.present || grabbed[side]) continue; // a carrying hand doesn't push
     // camera: hands are always solid. mouse: only while the button is down (hand "on the table")
-    if (mouse ? h.pinch : !h.pinch) handColliders(h, next);
+    if (mouse ? !h.pinch : h.pinch) continue;
+    const shape = handShape(h);
+    centroids[side] = { x: shape.cx, y: shape.cy };
+    next.push(shape);
   }
-  // velocity from last frame (index-matched; only valid if the hand set didn't change)
-  if (colliders.length === next.length) {
-    next.forEach((c, i) => { c.vx = (c.x - colliders[i].x) / dt; c.vy = (c.y - colliders[i].y) / dt; });
-  }
-  prevColliders = colliders.length === next.length ? colliders : next;
+  prevCentroid = Object.fromEntries(colliders.map((c) => [c.side, { x: c.cx, y: c.cy }]));
   colliders = next;
+  return centroids;
 }
 
 // ---------- simulation ----------
@@ -312,24 +337,62 @@ const key = (x: number, y: number) => (((x + 1000) & 0xffff) << 16) | ((y + 1000
 
 function collide(frac: number) {
   const W = 1e9;
-  // hands: interpolate collider position across the frame's substeps (cheap CCD)
-  for (let ci = 0; ci < colliders.length; ci++) {
-    const c = colliders[ci];
-    const p = prevColliders[ci] ?? c;
-    const cx = p.x + (c.x - p.x) * frac, cy = p.y + (c.y - p.y) * frac;
-    const r2 = c.r * c.r;
+  // hands: slide each hand shape from last frame's position to this frame's across the
+  // substeps (cheap continuous collision, so a fast hand can't skip over a letter)
+  for (const c of colliders) {
+    const prev = prevCentroid[c.side] ?? { x: c.cx, y: c.cy };
+    const ox_ = (prev.x - c.cx) * (1 - frac), oy_ = (prev.y - c.cy) * (1 - frac);
+    const poly = c.pts.map((q) => ({ x: q.x + ox_, y: q.y + oy_ }));
+    const ccx = c.cx + ox_, ccy = c.cy + oy_;
+    const n = poly.length;
+    // A moving hand pushes points out of its LEADING edge (ahead of its motion), so a palm
+    // coming down presses material down instead of splitting it sideways. A still hand
+    // pushes to the nearest edge.
+    const sp = Math.hypot(c.vx, c.vy);
+    const lead = sp > 150 ? Math.min(1, (sp - 150) / 350) : 0;
+    const ux = sp > 0 ? c.vx / sp : 0, uy = sp > 0 ? c.vy / sp : 0;
+    const orient = Math.sign((poly[1].x - poly[0].x) * (poly[2].y - poly[0].y) - (poly[1].y - poly[0].y) * (poly[2].x - poly[0].x)) || 1;
     for (let i = 0; i < N; i++) {
-      const dx = px[i] - cx, dy = py[i] - cy;
-      const d2 = dx * dx + dy * dy;
-      if (d2 >= r2) continue;
-      const d = Math.sqrt(d2) || 1e-6;
-      const nx = dx / d, ny = dy / d;
-      px[i] = cx + nx * c.r;
-      py[i] = cy + ny * c.r;
-      // give the point at least the collider's normal speed (this is what makes a swipe knock)
+      const x = px[i], y = py[i];
+      if (x < c.x0 + ox_ || x > c.x1 + ox_ || y < c.y0 + oy_ || y > c.y1 + oy_) continue;
+      let inside = true;
+      for (let k = 0; k < n && inside; k++) {
+        const a = poly[k], b = poly[(k + 1) % n];
+        if (((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)) * orient < 0) inside = false;
+      }
+      if (!inside) continue;
+      // nearest-edge exit
+      let best = Infinity, ex = x, ey = y, en = { x: 0, y: -1 };
+      // motion exit (ray along u)
+      let tBest = Infinity, mx = x, my = y, mn = { x: 0, y: -1 };
+      for (let k = 0; k < n; k++) {
+        const a = poly[k], b = poly[(k + 1) % n];
+        const exx = b.x - a.x, eyy = b.y - a.y, len2 = exx * exx + eyy * eyy || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * exx + (y - a.y) * eyy) / len2));
+        const qx = a.x + exx * t, qy = a.y + eyy * t, d = Math.hypot(x - qx, y - qy);
+        let nx = eyy, ny = -exx;
+        if (nx * ((a.x + b.x) / 2 - ccx) + ny * ((a.y + b.y) / 2 - ccy) < 0) { nx = -nx; ny = -ny; }
+        const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        if (d < best) { best = d; ex = qx; ey = qy; en = { x: nx, y: ny }; }
+        if (lead > 0) {
+          const den = ux * eyy - uy * exx;
+          if (Math.abs(den) > 1e-9) {
+            const tr = ((a.x - x) * eyy - (a.y - y) * exx) / den;
+            const se = ((a.x - x) * uy - (a.y - y) * ux) / den;
+            if (tr >= 0 && se >= 0 && se <= 1 && tr < tBest) { tBest = tr; mx = x + ux * tr; my = y + uy * tr; mn = { x: nx, y: ny }; }
+          }
+        }
+      }
+      if (lead > 0 && tBest < Infinity) {
+        ex += (mx - ex) * lead; ey += (my - ey) * lead;
+        en = lead > 0.5 ? mn : en;
+      }
+      px[i] = ex;
+      py[i] = ey;
+      // give the point at least the hand's speed along the push direction (this is what makes a swipe knock)
       const vx = (px[i] - ox[i]) / DT, vy = (py[i] - oy[i]) / DT;
-      const vn = vx * nx + vy * ny, cn = Math.max(-2500, Math.min(2500, c.vx * nx + c.vy * ny));
-      if (vn < cn) { ox[i] -= nx * (cn - vn) * DT; oy[i] -= ny * (cn - vn) * DT; }
+      const vn = vx * en.x + vy * en.y, cn = Math.max(-2500, Math.min(2500, c.vx * en.x + c.vy * en.y));
+      if (vn < cn) { ox[i] -= en.x * (cn - vn) * DT; oy[i] -= en.y * (cn - vn) * DT; }
     }
   }
   // letters bump each other: push apart points of different letters that get too close
@@ -416,6 +479,24 @@ run({
       // test hook: per-letter height/width, and a way to set params
       (window as unknown as Record<string, unknown>).__soft = {
         params,
+        state: () => ({ grabbed: Object.keys(grabbed), colliders: colliders.length }),
+        // mean px distance from each letter's ORIGINAL shape after best-fit rotation:
+        // ignores sliding and toppling, measures only how squashed it is
+        deformation: () => bodies.map((b) => {
+          const [cx, cy] = centroid(b);
+          let sxx = 0, sxy = 0;
+          for (let k = 0; k < b.count; k++) {
+            const qx = b.original[2 * k], qy = b.original[2 * k + 1], dx = px[b.start + k] - cx, dy = py[b.start + k] - cy;
+            sxx += qx * dx + qy * dy; sxy += qx * dy - qy * dx;
+          }
+          const th = Math.atan2(sxy, sxx), c = Math.cos(th), sn = Math.sin(th);
+          let e = 0;
+          for (let k = 0; k < b.count; k++) {
+            const qx = b.original[2 * k], qy = b.original[2 * k + 1];
+            e += Math.hypot(cx + c * qx - sn * qy - px[b.start + k], cy + sn * qx + c * qy - py[b.start + k]);
+          }
+          return Math.round((e / b.count) * 10) / 10;
+        }),
         boxes: () => bodies.map((b) => {
           let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
           for (let i = b.start; i < b.start + b.count; i++) {
@@ -466,7 +547,7 @@ run({
       }
       if (h.pinchEnd) delete grabbed[side];
     }
-    updateColliders(app, Math.max(dt, 1e-3));
+    updateColliders(app);
     accumulator += dt;
     let steps = 0;
     const total = Math.min(4, Math.floor(accumulator / DT));
@@ -499,7 +580,12 @@ run({
     }
     // colliders, faintly, so you can see what's touching
     ctx.strokeStyle = "rgba(30,30,30,.35)";
-    for (const c of colliders) { ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.stroke(); }
+    for (const c of colliders) {
+      ctx.beginPath();
+      c.pts.forEach((q, k) => (k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.closePath();
+      ctx.stroke();
+    }
     for (const side of ["left", "right"] as Side[]) {
       const h = app.signals[side];
       if (!h.present) continue;

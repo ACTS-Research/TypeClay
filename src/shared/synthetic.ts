@@ -155,7 +155,7 @@ export class MouseHands {
     this.right.visible = this.inside || !!this.drag;
     for (const side of ["left", "right"] as Side[]) {
       const h = this[side];
-      h.pinchAmt += ((h.pinch ? 1 : 0) - h.pinchAmt) * Math.min(1, dt * 25);
+      h.pinchAmt += ((h.pinch ? 1 : 0) - h.pinchAmt) * Math.min(1, dt * 40);
       if (h.visible) out.push({ side, pts: buildHand(h, side, size) });
     }
     return out;

@@ -78,7 +78,11 @@ class HandTrack {
     };
 
     const g = settings.gestures;
-    s.pinchDist = this.fPinch.filter(dist(P[LM.THUMB_TIP], P[LM.INDEX_TIP]) / s.size, t);
+    // Two versions of pinch distance: `rawPinch` (landmarks already smoothed once) decides
+    // pinch on/off, so grabs register where the fingers closed rather than ~200 ms later;
+    // the extra-smoothed `pinchDist` is for continuous mappings (e.g. an axis in A).
+    const rawPinch = dist(P[LM.THUMB_TIP], P[LM.INDEX_TIP]) / s.size;
+    s.pinchDist = this.fPinch.filter(rawPinch, t);
     const tips = [LM.INDEX_TIP, LM.MIDDLE_TIP, LM.RING_TIP, LM.PINKY_TIP];
     const reach = tips.reduce((a, i) => a + dist(P[i], P[LM.WRIST]), 0) / tips.length / s.size;
     s.openness = clamp01(this.fOpen.filter((reach - g.fistRatio) / (g.openRatio - g.fistRatio), t));
@@ -93,8 +97,8 @@ class HandTrack {
     s.roll = this.fRoll.filter(roll, t);
 
     // pinch with hysteresis
-    if (!s.pinch && s.pinchDist < g.pinchOn) { s.pinch = true; s.pinchStart = true; }
-    else if (s.pinch && s.pinchDist > g.pinchOff) { s.pinch = false; s.pinchEnd = true; }
+    if (!s.pinch && rawPinch < g.pinchOn) { s.pinch = true; s.pinchStart = true; }
+    else if (s.pinch && rawPinch > g.pinchOff) { s.pinch = false; s.pinchEnd = true; }
 
     // velocity from the smoothed palm
     if (this.prevPalm) {
