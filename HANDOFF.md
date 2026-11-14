@@ -1,6 +1,6 @@
 # Handoff: Type as Clay
 
-Status as of 14 November 2026. Branch `claude/serene-dirac-qhtik6`, which is currently the repo's **only and default branch**, so a plain `git clone` gets this code.
+Status as of 14 November 2026. All work is on `main`, the repo's default branch, so a plain `git clone` gets this code.
 
 ## In one paragraph
 
@@ -87,5 +87,4 @@ See `CLAUDE.md` for the architecture map, commands, conventions and gotchas, and
 
 ## Housekeeping
 
-- The repo's only branch is named `claude/serene-dirac-qhtik6`. Consider renaming it to `main` in GitHub settings (Settings → Branches). Nothing in the code depends on the name.
 - The first commit on the branch is an earlier, unrelated "Type Toy" GIF prototype, replaced by this project. A claude.ai artifact published from that earlier version still exists and is now stale.
