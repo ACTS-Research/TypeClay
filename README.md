@@ -4,9 +4,15 @@ Three browser prototypes exploring one idea: your hands, tracked through a webca
 
 This is an exploration. The code favours quick, readable and hackable over polished. Every mapping decision is written as a comment at the top of each prototype file, so you can retune it fast.
 
+**Picking this up?** Read [`HANDOFF.md`](HANDOFF.md) for the current state, what's verified, known problems and next steps. Claude Code sessions also read [`CLAUDE.md`](CLAUDE.md) automatically.
+
 ## Run it
 
+You need Node.js 20.19 or newer (`.nvmrc` pins 22).
+
 ```bash
+git clone https://github.com/ACTS-Research/type-toy.git
+cd type-toy
 npm install
 npm run dev
 ```
@@ -25,7 +31,10 @@ Everything runs offline after `npm install`:
 Other commands:
 - `npm run build` type-checks and builds to `dist/`.
 - `npm run preview` serves that build.
+- `npm run smoke` runs a headless-browser check of all three prototypes using the mouse fallback (the first time, run `npx playwright install chromium`).
 - Add `?nocam` to any prototype URL to skip the webcam and use only the mouse.
+
+GitHub Actions runs the build and the smoke test on every push (`.github/workflows/build.yml`).
 
 **Stack:** Vite + vanilla TypeScript, MediaPipe Tasks Vision `HandLandmarker` (2 hands, 21 landmarks each), opentype.js 2.0 and lil-gui.
 
@@ -124,8 +133,7 @@ Each letter is a lump of material on a floor, simulated with position-based dyna
 
 | Gesture | Effect |
 |---|---|
-| fingertips | small colliders; poke and dent |
-| knuckles + palm | bigger colliders; the palm grows as the hand opens, so a flat hand presses a letter flat |
+| whole hand | one solid shape around the 21 landmarks (like a mitten). Moving, it pushes material out of its leading edge, so a palm coming down presses a letter flat; held still, it pushes to the nearest edge |
 | a fast swipe | the hand's speed transfers on contact, so letters get knocked over |
 | two palms around a letter | squeezes it; the area constraint makes it bulge and push back |
 | pinch near a letter | picks it up by the nearest 16 points (carry it, drop it) |
@@ -176,13 +184,15 @@ They are not from real hands in front of a laptop. Treat "felt good" as "behaves
 - **The mouse fallback goes through the real code.** Building a fake hand instead of faking the signals means mouse testing exercises the gesture layer, the debug overlay and C's colliders. That's how most bugs here were found.
 - **A:** weight on a fist and width on two hands read straight away. Per-letter mode produces truly uneven words: the C stays regular while the L, A and Y take the hand's values.
 - **B:** a single pinch-pull reads exactly like liquify, and the two-hand stretch shears letters convincingly. Resampling on release keeps the edges smooth after big pulls.
-- **C:** the plasticity slider makes a clear, measurable difference. After the same press, the L returns to its original 151 × 225 px at plasticity 0 and stays at 259 × 191 px at plasticity 1. The area constraint makes squeezed letters bulge instead of vanishing. Letters pile up, fall over and slump in a way that reads as clay.
+- **C:** the plasticity slider makes a clear, measurable difference. After the same press, the C returns to within 2 px of its original shape at plasticity 0 and keeps a dent of about 37 px at plasticity 1. The area constraint makes squeezed letters bulge instead of vanishing. Letters pile up, fall over and slump in a way that reads as clay.
 
 ### What didn't, or needs work
 
 - **A:** Roboto Flex's parametric axes break their joins when pushed to opposite extremes together (for example hairline verticals with fat horizontals). That's the font itself; fontTools renders the same broken shapes. There's now a "parametric range" setting (default 70%) that limits how far those axes travel.
-- **B:** the pinch point is smoothed, so a fast grab lands a little behind where you pinched. The brush can also catch two neighbouring letters at once. Contours can fold over themselves, and the fill then looks odd.
+- **B:** the brush can catch two neighbouring letters at once. Contours can fold over themselves, and the fill then looks odd. (A fast grab used to land behind where you pinched; pinch on/off now skips one smoothing stage, so it registers about 80 ms after the fingers close instead of about 200 ms.)
 - **C, lifting:** a lifted letter stretches like taffy, because only the grabbed points are pulled and position-based solvers spread a pull slowly through a body.
+- **C, tangling:** letters are hollow outlines. A hand pressing hard into a letter with a closed counter (O, A, B) can push the inner contour through the outer one, and then even rubber can't spring back (3 of 5 presses on an O). The fix is an interior triangle mesh; see HANDOFF.md for the measurements.
+- **C, toppling:** tall thin letters (L, I, T) tend to topple rather than compress when pressed from above.
 - **C, contact:** contact between letters is point-to-point, so at high speed letters can pass through each other.
 - **C, input spikes:** a sudden jump in hand position (a tracking glitch, or a scripted mouse) used to send letters flying. Point speed is now capped.
 - **Speed:** MediaPipe runs synchronously on the main thread, so its time per frame is added to every frame. Drawing alone holds 60 fps with a 9-letter word in all three prototypes. With the camera on, a laptop GPU should land somewhere between 30 and 60 fps; I couldn't measure that here.
